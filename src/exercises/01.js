@@ -14,8 +14,38 @@ const UserDispatchContext = React.createContext()
 
 function userReducer(state, action) {
   switch (action.type) {
-    case 'update': {
-      return { user: action.updatedUser }
+    case 'start update': {
+      return {
+        ...state,
+        user: { ...state.user, ...action.updates },
+        status: 'pending',
+        storedUser: state.user,
+      }
+    }
+    case 'finish update': {
+      return {
+        ...state,
+        user: action.updatedUser,
+        status: 'resolved',
+        storedUser: null,
+        error: null,
+      }
+    }
+    case 'fail update': {
+      return {
+        ...state,
+        status: 'rejected',
+        error: action.error,
+        user: state.storedUser,
+        storedUser: null,
+      }
+    }
+    case 'reset': {
+      return {
+        ...state,
+        status: null,
+        error: null,
+      }
     }
     default: {
       throw new Error(`Unhandled action type: ${action.type}`)
@@ -25,11 +55,27 @@ function userReducer(state, action) {
 
 function UserProvider({ children }) {
   const { user } = useAuth()
-  const [state, dispatch] = React.useReducer(userReducer, { user })
+  const [state, dispatch] = React.useReducer(userReducer, {
+    status: null,
+    error: null,
+    storedUser: user,
+    user,
+  })
+
+  const canDispatch = React.useRef(true)
+  React.useLayoutEffect(
+    () => () => {
+      canDispatch.current = false
+    },
+    [],
+  )
+  const safeDispatch = React.useCallback((...args) => {
+    canDispatch.current && dispatch(...args)
+  }, [])
 
   return (
     <UserStateContext.Provider value={state}>
-      <UserDispatchContext.Provider value={dispatch}>
+      <UserDispatchContext.Provider value={safeDispatch}>
         {children}
       </UserDispatchContext.Provider>
     </UserStateContext.Provider>
@@ -55,9 +101,17 @@ function useUserDispatch() {
 }
 
 async function updateUser(dispatch, user, updates) {
-  const updatedUser = await userClient.updateUser(user, updates)
-  dispatch({ type: 'update', updatedUser })
+  dispatch({ type: 'start update', updates })
+  try {
+    const updatedUser = await userClient.updateUser(user, updates)
+    dispatch({ type: 'finish update', updatedUser })
+    return updatedUser
+  } catch (error) {
+    dispatch({ type: 'fail update', error })
+    return Promise.reject(error)
+  }
 }
+
 
 // src/screens/user-profile.js
 
@@ -131,11 +185,14 @@ function UserSettings() {
             setFormState(user)
             userDispatch({ type: 'reset' })
           }}
-          disabled={!isChanged || isPending}
+          disabled={!isChanged}
         >
           Reset
         </button>
-        <button type="submit" disabled={!isChanged && !isRejected}>
+        <button
+          type="submit"
+          disabled={(!isChanged && !isRejected) || isPending}
+        >
           {isPending
             ? '...'
             : isRejected
@@ -155,13 +212,9 @@ function UserSettings() {
 }
 
 function UserDataDisplay() {
-  // 🐨 get the user from context
   const { user } = useUserState()
-  return (
-    <pre data-testid="user-data-display">{JSON.stringify(user, null, 2)}</pre>
-  )
+  return <pre>{JSON.stringify(user, null, 2)}</pre>
 }
-
 /*
 🦉 Elaboration & Feedback
 After the instruction, copy the URL below into your browser and fill out the form:
