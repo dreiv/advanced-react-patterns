@@ -1,29 +1,47 @@
 // React Context
 
-import React from 'react'
 import dequal from 'dequal'
-
+import React, { createContext, useContext, useReducer } from 'react'
+import { useAuth } from '../auth-context'
 // ./context/user-context.js
-
 // 🐨 you're gonna need these, so just uncomment it now :)
-// import * as userClient from '../user-client'
-// import {useAuth} from '../auth-context'
+import * as userClient from '../user-client'
+
 
 // 🐨 create your context here
+const UserContext = createContext()
+
+const reducer = (state, action) => {
+  switch (action.type) {
+    case 'update':
+      return { ...state, user: action.updatedUser}
+    case 'reset':
+      return state
+
+    default:
+      break;
+  }
+}
 
 function UserProvider({children}) {
   // 🐨 get the user from the useAuth hook so you can use that as your initial
   // state for this context provider
   // 💰 const {user} = useAuth()
+  const { user } = useAuth()
 
   // 🐨 useReducer here with a reducer you write and initialize it with the user
   // you got from useAuth
   // 💰 the reducer should handle an action type called `update` which will be
   // dispatched in the `updateUser` helper below
+  const [state, dispatch] = useReducer(reducer, { user })
 
   // 🐨 render state and dispatch as values to a context provider here
   // 💰 make sure you don't forget to render {children} as well!
-  return children
+  return (
+    <UserContext.Provider value={{ state, dispatch}}>
+      {children}
+    </UserContext.Provider>
+  )
 }
 
 // 🦉 You don't have to do this, but one good idea is to create a custom hook
@@ -40,9 +58,28 @@ async function updateUser(dispatch, user, updates) {
   // 💰 userClient.updateUser(user, updates) returns a promise which resolves
   // to the updatedUser.
   // 💰 this is an async function so you can use `await` if you want :)
+  const updatedUser = await userClient.updateUser(user, updates)
+  dispatch({ type: 'update', updatedUser})
 }
 
 // 🦉 here's where you'd normally export all this stuff
+function useUserState() {
+  const { state } = useContext(UserContext)
+
+  if (state === undefined) {
+    throw new Error('useUserState must be used within a UserContext.Provider')
+  }
+  return state
+}
+
+function useUserDispatch() {
+  const { dispatch } = useContext(UserContext)
+
+  if (dispatch === undefined) {
+    throw new Error('useUserDispatch must be used within a UserContext.Provider')
+  }
+  return dispatch
+}
 
 // src/screens/user-profile.js
 
@@ -50,14 +87,9 @@ async function updateUser(dispatch, user, updates) {
 
 function UserSettings() {
   // 🐨 get the user object and userDispatch function from context
-  const user = {tagline: '', bio: ''}
-  const userDispatch = () => {}
+  const { user, status, error } = useUserState()
+  const userDispatch = useUserDispatch()
 
-  const [asyncState, asyncDispatch] = React.useReducer(
-    (s, a) => ({...s, ...a}),
-    {status: null, error: null},
-  )
-  const {error, status} = asyncState
   const isPending = status === 'pending'
   const isRejected = status === 'rejected'
 
@@ -71,16 +103,8 @@ function UserSettings() {
 
   function handleSubmit(event) {
     event.preventDefault()
-
-    asyncDispatch({status: 'pending'})
-    updateUser(userDispatch, user, formState).then(
-      () => {
-        asyncDispatch({status: 'resolved'})
-      },
-      error => {
-        asyncDispatch({status: 'rejected', error})
-      },
-    )
+    // 🦉 notice that this code no longer does anything but call `updateUser`
+    updateUser(userDispatch, user, formState)
   }
 
   return (
@@ -127,7 +151,7 @@ function UserSettings() {
           type="button"
           onClick={() => {
             setFormState(user)
-            asyncDispatch({status: null, error: null})
+            userDispatch({ type: 'reset' })
           }}
           disabled={!isChanged || isPending}
         >
@@ -157,7 +181,7 @@ function UserSettings() {
 
 function UserDataDisplay() {
   // 🐨 get the user from context
-  const user = {}
+  const { user } = useUserState()
   return (
     <pre data-testid="user-data-display">{JSON.stringify(user, null, 2)}</pre>
   )
