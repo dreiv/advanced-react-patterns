@@ -1,7 +1,7 @@
 // React Context
 
 import dequal from 'dequal'
-import React, { createContext, useContext, useReducer } from 'react'
+import React from 'react'
 import { useAuth } from '../auth-context'
 // ./context/user-context.js
 // 🐨 you're gonna need these, so just uncomment it now :)
@@ -9,76 +9,54 @@ import * as userClient from '../user-client'
 
 
 // 🐨 create your context here
-const UserContext = createContext()
+const UserStateContext = React.createContext()
+const UserDispatchContext = React.createContext()
 
-const reducer = (state, action) => {
+function userReducer(state, action) {
   switch (action.type) {
-    case 'update':
-      return { ...state, user: action.updatedUser}
-    case 'reset':
-      return state
-
-    default:
-      break;
+    case 'update': {
+      return { user: action.updatedUser }
+    }
+    default: {
+      throw new Error(`Unhandled action type: ${action.type}`)
+    }
   }
 }
 
-function UserProvider({children}) {
-  // 🐨 get the user from the useAuth hook so you can use that as your initial
-  // state for this context provider
-  // 💰 const {user} = useAuth()
+function UserProvider({ children }) {
   const { user } = useAuth()
+  const [state, dispatch] = React.useReducer(userReducer, { user })
 
-  // 🐨 useReducer here with a reducer you write and initialize it with the user
-  // you got from useAuth
-  // 💰 the reducer should handle an action type called `update` which will be
-  // dispatched in the `updateUser` helper below
-  const [state, dispatch] = useReducer(reducer, { user })
-
-  // 🐨 render state and dispatch as values to a context provider here
-  // 💰 make sure you don't forget to render {children} as well!
   return (
-    <UserContext.Provider value={{ state, dispatch}}>
-      {children}
-    </UserContext.Provider>
+    <UserStateContext.Provider value={state}>
+      <UserDispatchContext.Provider value={dispatch}>
+        {children}
+      </UserDispatchContext.Provider>
+    </UserStateContext.Provider>
   )
 }
 
-// 🦉 You don't have to do this, but one good idea is to create a custom hook
-// which retrieves the context value via React.useContext, then people can use
-// your custom hook. If you want to try that, then go ahead and put it here.
-
-// This is a utility function which accepts the reducer's dispatch function
-// as well as the user and any updates. It's responsible for interacting with
-// the userClient and the dispatch.
-async function updateUser(dispatch, user, updates) {
-  // 🐨 use the userClient.updateUser function to send updates to the backend
-  // 🐨 then when that's completed, dispatch an 'update' action with the updated
-  // user information you get back
-  // 💰 userClient.updateUser(user, updates) returns a promise which resolves
-  // to the updatedUser.
-  // 💰 this is an async function so you can use `await` if you want :)
-  const updatedUser = await userClient.updateUser(user, updates)
-  dispatch({ type: 'update', updatedUser})
-}
-
-// 🦉 here's where you'd normally export all this stuff
 function useUserState() {
-  const { state } = useContext(UserContext)
-
-  if (state === undefined) {
-    throw new Error('useUserState must be used within a UserContext.Provider')
+  const context = React.useContext(UserStateContext)
+  if (context === undefined) {
+    throw new Error(`useUserState must be used within a UserProvider`)
   }
-  return state
+
+  return context
 }
 
 function useUserDispatch() {
-  const { dispatch } = useContext(UserContext)
-
-  if (dispatch === undefined) {
-    throw new Error('useUserDispatch must be used within a UserContext.Provider')
+  const context = React.useContext(UserDispatchContext)
+  if (context === undefined) {
+    throw new Error(`useUserDispatch must be used within a UserProvider`)
   }
-  return dispatch
+
+  return context
+}
+
+async function updateUser(dispatch, user, updates) {
+  const updatedUser = await userClient.updateUser(user, updates)
+  dispatch({ type: 'update', updatedUser })
 }
 
 // src/screens/user-profile.js
@@ -86,7 +64,6 @@ function useUserDispatch() {
 // 🦉 here's where you'd normally import all the stuff you need from the context
 
 function UserSettings() {
-  // 🐨 get the user object and userDispatch function from context
   const { user, status, error } = useUserState()
   const userDispatch = useUserDispatch()
 
@@ -98,19 +75,20 @@ function UserSettings() {
   const isChanged = !dequal(user, formState)
 
   function handleChange(e) {
-    setFormState({...formState, [e.target.name]: e.target.value})
+    setFormState({ ...formState, [e.target.name]: e.target.value })
   }
 
   function handleSubmit(event) {
     event.preventDefault()
-    // 🦉 notice that this code no longer does anything but call `updateUser`
-    updateUser(userDispatch, user, formState)
+    updateUser(userDispatch, user, formState).catch(() => {
+      /* ignore the error */
+    })
   }
 
   return (
     <form onSubmit={handleSubmit}>
-      <div style={{marginBottom: 12}}>
-        <label style={{display: 'block'}} htmlFor="username">
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ display: 'block' }} htmlFor="username">
           Username
         </label>
         <input
@@ -119,11 +97,11 @@ function UserSettings() {
           disabled
           readOnly
           value={formState.username}
-          style={{width: '100%'}}
+          style={{ width: '100%' }}
         />
       </div>
-      <div style={{marginBottom: 12}}>
-        <label style={{display: 'block'}} htmlFor="tagline">
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ display: 'block' }} htmlFor="tagline">
           Tagline
         </label>
         <input
@@ -131,11 +109,11 @@ function UserSettings() {
           name="tagline"
           value={formState.tagline}
           onChange={handleChange}
-          style={{width: '100%'}}
+          style={{ width: '100%' }}
         />
       </div>
-      <div style={{marginBottom: 12}}>
-        <label style={{display: 'block'}} htmlFor="bio">
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ display: 'block' }} htmlFor="bio">
           Biography
         </label>
         <textarea
@@ -143,7 +121,7 @@ function UserSettings() {
           name="bio"
           value={formState.bio}
           onChange={handleChange}
-          style={{width: '100%'}}
+          style={{ width: '100%' }}
         />
       </div>
       <div>
@@ -157,20 +135,17 @@ function UserSettings() {
         >
           Reset
         </button>
-        <button
-          type="submit"
-          disabled={(!isChanged && !isRejected) || isPending}
-        >
+        <button type="submit" disabled={!isChanged && !isRejected}>
           {isPending
             ? '...'
             : isRejected
-            ? '✖ Try again'
-            : isChanged
-            ? 'Submit'
-            : '✔'}
+              ? '✖ Try again'
+              : isChanged
+                ? 'Submit'
+                : '✔'}
         </button>
         {isRejected ? (
-          <div style={{color: 'red'}}>
+          <div style={{ color: 'red' }}>
             <pre>{error.message}</pre>
           </div>
         ) : null}
